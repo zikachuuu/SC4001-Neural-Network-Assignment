@@ -19,7 +19,9 @@ from sklearn.model_selection import KFold
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, precision_score, recall_score, confusion_matrix
 
-
+# =================================
+# Provided functions & classes
+# =================================
 
 def split_dataset(df, columns_to_drop, test_size, random_state):
     label_encoder = preprocessing.LabelEncoder()
@@ -73,14 +75,80 @@ class EarlyStopper:
             if self.counter >= self.patience:
                 return True
         return False
-    
 
-##############################################################################
+
+
+# ================================
+# Copied from Question A1
+# ================================
+
+class MLP(nn.Module):
+    """
+    Multi-Layer Perceptron (MLP) class that defines the architecture of the MLP model.
+    """
+
+    def __init__(
+            self                            , 
+            num_features        : int       ,   # Num of input features (dimensionality of input data)
+            num_hidden_layers   : int       ,   # Num of hidden layers (i.e. depth) in the MLP (excluding the output layer)
+            hidden_widths       : list[int] ,   # List of widths for each hidden layer (length of list should be equal to num_hidden_layers)
+            num_labels          : int       ,   # Num of output labels (dimensionality of output)
+            dropout             : float         # Dropout probability to apply after each hidden layer (between 0 and 1)
+        ):
+        """
+        Initializes the MLP model architecture based on the specified parameters.
+        Args:
+            num_features: Number of input features (dimensionality of input data).
+            num_hidden_layers: Number of hidden layers (i.e. depth) in the MLP (excluding the output layer).
+            hidden_widths: List of widths for each hidden layer (length of list should be equal to num_hidden_layers).
+            num_labels: Number of output labels (dimensionality of output).
+            dropout: Dropout probability to apply after each hidden layer (between 0 and 1).
+        """
+
+        super().__init__()
+
+        if num_hidden_layers != len(hidden_widths):
+            raise ValueError("Length of hidden_widths list must be equal to num_hidden_layers")
+
+        # Input layer + first hidden layer
+        layers = [
+            nn.Linear(num_features, hidden_widths[0]),  # Creates a fully connected layer that performs U = W*X + B
+            nn.ReLU(),                                  # Apply ReLU activation function Y = f(U)
+            nn.Dropout(dropout),                        # Apply Dropout with probability of dropout
+        ]
+
+        # Additional hidden layers (if num_hidden_layers > 1)
+        for i in range(0, num_hidden_layers - 1):
+            layers.extend([
+                nn.Linear(hidden_widths[i], hidden_widths[i+1]),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+            ])
+
+        # Output layer
+        layers.extend([
+            nn.Linear(hidden_widths[-1], num_labels),
+            nn.Sigmoid(),
+        ])
+
+        self.mlp_stack = nn.Sequential(*layers)
+
+    def forward(self, x) -> torch.Tensor:
+        """
+        Defines the forward pass of the MLP model, which takes input data x and produces output predictions.
+        Args:
+            x: Input data tensor of shape (batch_size, num_features).
+        Returns:
+            torch.Tensor: Output predictions tensor of shape (batch_size, num_labels) after passing through the MLP architecture.
+        """                
+        return self.mlp_stack(x)
 
 
 def preprocess(df):
-    """From Part A1"""
-    
+    """
+    Process the input DataFrame by splitting it into training and testing sets, 
+    and applying preprocessing steps such as feature scaling.
+    """
     X_train, y_train, X_test, y_test = split_dataset(
         df              = df,
         columns_to_drop = ['filename', 'label'],    # Columns to drop for training set
@@ -92,8 +160,10 @@ def preprocess(df):
 
 
 class CustomDataset(Dataset):
-    """From Part A1"""
-
+    """
+    Custom PyTorch Dataset class that takes in features X and labels y (dataframes), 
+    converts them to PyTorch tensors, and implements the necessary methods for data loading.
+    """
     def __init__(self, X, y):
         self.X = torch.tensor(X, dtype=torch.float32)
         self.y = torch.tensor(y, dtype=torch.float32).unsqueeze(1)
@@ -103,11 +173,21 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.X[idx], self.y[idx]
-    
 
-def intialise_loaders(X_train_scaled, y_train, X_test_scaled, y_test, batch_size=64):
-    """From Part A1"""
 
+def intialise_loaders(X_train_scaled, y_train, X_test_scaled, y_test, batch_size):
+    """
+    Initializes PyTorch DataLoaders for the training and testing datasets.
+    Args:
+        X_train_scaled: Scaled training features.
+        y_train: Training labels.
+        X_test_scaled: Scaled testing features.
+        y_test: Testing labels.
+        batch_size: Batch size to use for the DataLoaders.
+    Returns:
+        train_dataloader: DataLoader for the training dataset.
+        test_dataloader: DataLoader for the testing dataset.
+    """
     train_dataset   : CustomDataset = CustomDataset(X_train_scaled, y_train)
     test_dataset    : CustomDataset = CustomDataset(X_test_scaled, y_test)
 
@@ -125,37 +205,6 @@ def intialise_loaders(X_train_scaled, y_train, X_test_scaled, y_test, batch_size
     return train_dataloader, test_dataloader
 
 
-class MLP(nn.Module):
-
-    def __init__(
-            self                    , 
-            num_features    = 128   , 
-            num_hidden      = 256   , 
-            num_labels      = 1     ,
-            dropout         = 0.3
-        ):
-        super().__init__()
-        self.mlp_stack = nn.Sequential(
-            nn.Linear(num_features, num_hidden),    # Creates a fully connected layer that performs U = W*X + B
-            nn.ReLU(),                              # Apply ReLU activation function Y = f(U)
-            nn.Dropout (dropout),                   # Apply Dropout with probability of dropout
-
-            nn.Linear(num_hidden, num_hidden),
-            nn.ReLU(),
-            nn.Dropout (dropout),
-
-            nn.Linear(num_hidden, num_hidden),
-            nn.ReLU(),
-            nn.Dropout (dropout),
-
-            nn.Linear(num_hidden, num_labels),
-            nn.Sigmoid()                            
-        )
-
-    def forward(self, x):                
-        return self.mlp_stack(x)
-    
-
 def train_one_epoch(
         model       , 
         dataloader  , 
@@ -163,13 +212,13 @@ def train_one_epoch(
         optimizer
     ):
     """Train for one epoch and return average loss and accuracy"""
-    model.train()  # Enable dropout
+    model.train()               # Enable dropout
 
-    epoch_train_loss= 0     # Sum of losses (binary cross entropy) across all batches (one epoch)
-    epoch_correct   = 0     # Total number of correct predictions across all batches (one epoch)
+    epoch_train_loss    = 0     # Sum of losses (binary cross entropy) across all batches (one epoch)
+    epoch_correct       = 0     # Total number of correct predictions across all batches (one epoch)
     
-    size            = len(dataloader.dataset)     # Total number of input patterns
-    num_batches     = len(dataloader)             # Number of batches
+    size                = len(dataloader.dataset)     # Total number of input patterns
+    num_batches         = len(dataloader)             # Number of batches
     
     for batch_idx, (X_batch, y_batch) in enumerate(dataloader):
         batch_size = X_batch.size(0)              # Number of samples in the current batch
@@ -210,7 +259,7 @@ def evaluate(
     size            = len(dataloader.dataset)
     num_batches     = len(dataloader)
     
-    with torch.no_grad():   # stop PyTouchh from calculating gradients during evaluation (saves memory and computations)
+    with torch.no_grad():   # stop PyTouch from calculating gradients during evaluation (saves memory and computations)
         
         for X_batch, y_batch in dataloader:
             batch_size = X_batch.size(0)
